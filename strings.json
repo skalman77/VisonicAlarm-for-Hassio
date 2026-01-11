@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Konfigurera Visonic Alarm",
+        "description": "Ange dina Visonic Alarm-uppgifter",
+        "data": {
+          "host": "Värdnamn (t.ex. COMPANY.tycomonitor.com)",
+          "panel_id": "Panel-ID",
+          "user_code": "Användarkod",
+          "app_id": "App-ID (UUID)",
+          "user_email": "E-postadress",
+          "user_password": "Lösenord",
+          "partition": "Partition (-1 för standard)",
+          "no_pin_required": "Ingen PIN krävs",
+          "event_hour_offset": "Händelse tim-offset"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunde inte ansluta till Visonic Alarm",
+      "invalid_auth": "Ogiltiga inloggningsuppgifter",
+      "unknown": "Oväntat fel"
+    },
+    "abort": {
+      "already_configured": "Denna panel är redan konfigurerad"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Visonic Alarm-inställningar",
+        "data": {
+          "no_pin_required": "Ingen PIN krävs",
+          "event_hour_offset": "Händelse tim-offset"
+        }
+      }
+    }
+  }
+}

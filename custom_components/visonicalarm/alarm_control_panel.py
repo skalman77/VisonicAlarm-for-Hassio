@@ -1,27 +1,28 @@
-"""
-Interfaces with the Visonic Alarm control panel.
-"""
-
+"""Interfaces with the Visonic Alarm control panel."""
 import logging
 from time import sleep
-from datetime import timedelta
 
-import homeassistant.components.alarm_control_panel as alarm
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelState,
+    AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
 )
 import homeassistant.components.persistent_notification as pn
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_CODE_FORMAT,
     EVENT_STATE_CHANGED,
     STATE_UNKNOWN,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import CONF_EVENT_HOUR_OFFSET, CONF_NO_PIN_REQUIRED, CONF_USER_CODE, HUB as hub
-
-SUPPORT_VISONIC = (
-    AlarmControlPanelEntityFeature.ARM_HOME | AlarmControlPanelEntityFeature.ARM_AWAY
+from .const import (
+    DOMAIN,
+    CONF_USER_CODE,
+    CONF_NO_PIN_REQUIRED,
+    CONF_EVENT_HOUR_OFFSET,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,18 +37,27 @@ ATTR_CHANGED_BY = 'changed_by'
 ATTR_CHANGED_TIMESTAMP = 'changed_timestamp'
 ATTR_ALARMS = 'alarm'
 
-SCAN_INTERVAL = timedelta(seconds=10)
+SUPPORT_VISONIC = (
+    AlarmControlPanelEntityFeature.ARM_HOME | AlarmControlPanelEntityFeature.ARM_AWAY
+)
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
-    """Set up the Visonic Alarm platform."""
-    hub.update()
-    visonic_alarm = VisonicAlarm(hass)
-    add_devices([visonic_alarm])
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Visonic Alarm from a config entry."""
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = data['coordinator']
+    alarm = data['alarm']
+    config = data['config']
+    options = data['options']
 
-    # Create an event listener to listen for changed arm state.
-    # We will only fetch the events from the API once the arm state has changed
-    # because it is quite a lot of data.
+    visonic_alarm = VisonicAlarm(coordinator, alarm, config, options, entry)
+    async_add_entities([visonic_alarm])
+
+    # Create event listener for arm state changes
     def arm_event_listener(event):
         entity_id = event.data.get('entity_id')
         old_state = event.data.get('old_state')
@@ -56,44 +66,69 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         if new_state is None or new_state.state in (STATE_UNKNOWN, ''):
             return None
 
-        # NOTE: Original code listened to alarm_control_panel.visonic_alarm only.
-        # Keep behaviour as-is to avoid unintended changes; adjust if needed.
         if (
-            entity_id == 'alarm_control_panel.visonic_alarm'
-            and old_state.state is not new_state.state
+            entity_id == visonic_alarm.entity_id
+            and old_state is not None
+            and old_state.state != new_state.state
         ):
             state = new_state.state
-            if state == 'armed_home' or state == 'armed_away' or state == 'Disarmed':
-                last_event = hub.alarm.get_last_event(
-                    timestamp_hour_offset=visonic_alarm.event_hour_offset
-                )
-                visonic_alarm.update_last_event(
-                    last_event['user'], last_event['timestamp']
-                )
+            if state in ['armed_home', 'armed_away', 'disarmed']:
+                try:
+                    last_event = alarm.get_last_event(
+                        timestamp_hour_offset=visonic_alarm.event_hour_offset
+                    )
+                    visonic_alarm.update_last_event(
+                        last_event['user'], last_event['timestamp']
+                    )
+                except Exception as err:
+                    _LOGGER.error('Failed to get last event: %s', err)
 
-    hass.bus.listen(EVENT_STATE_CHANGED, arm_event_listener)
+    hass.bus.async_listen(EVENT_STATE_CHANGED, arm_event_listener)
 
 
-class VisonicAlarm(alarm.AlarmControlPanelEntity):
+class VisonicAlarm(CoordinatorEntity, AlarmControlPanelEntity):
     """Representation of a Visonic Alarm control panel."""
 
-    def __init__(self, hass):
+    _attr_supported_features = SUPPORT_VISONIC
+
+    def __init__(self, coordinator, alarm, config, options, entry):
         """Initialize the Visonic Alarm panel."""
-        self._hass = hass
+        super().__init__(coordinator)
+        self._alarm = alarm
+        self._config = config
+        self._options = options
+        self._entry = entry
         self._attr_alarm_state = None
 
         # Read config
-        raw_code = hub.config.get(CONF_USER_CODE)
+        raw_code = config.get(CONF_USER_CODE)
         self._code = str(raw_code) if raw_code is not None else None
 
-        self._no_pin_required = hub.config.get(CONF_NO_PIN_REQUIRED)
+        # Check options first, then config
+        self._no_pin_required = options.get(
+            CONF_NO_PIN_REQUIRED,
+            config.get(CONF_NO_PIN_REQUIRED, False)
+        )
+        
+        self._event_hour_offset = options.get(
+            CONF_EVENT_HOUR_OFFSET,
+            config.get(CONF_EVENT_HOUR_OFFSET, 0)
+        )
+
         self._changed_by = None
         self._changed_timestamp = None
-        self._event_hour_offset = hub.config.get(CONF_EVENT_HOUR_OFFSET)
-        self._id = hub.alarm.serial_number
 
-        # Expose code format via entity attribute (not only state attributes)
+        # Expose code format
         self._attr_code_format = None if self._no_pin_required else 'number'
+        
+        # Unique ID and device info
+        self._attr_unique_id = f'{alarm.serial_number}_alarm'
+        self._attr_device_info = {
+            'identifiers': {(DOMAIN, alarm.serial_number)},
+            'name': f'Visonic Alarm {alarm.serial_number}',
+            'manufacturer': 'Visonic',
+            'model': alarm.model,
+        }
 
     @property
     def name(self):
@@ -101,25 +136,18 @@ class VisonicAlarm(alarm.AlarmControlPanelEntity):
         return 'Visonic Alarm'
 
     @property
-    def unique_id(self):
-        """Return a unique id."""
-        return self._id
-
-    @property
-    def state_attributes(self):
+    def extra_state_attributes(self):
         """Return the state attributes of the alarm system."""
         return {
-            ATTR_SYSTEM_SERIAL_NUMBER: hub.alarm.serial_number,
-            ATTR_SYSTEM_MODEL: hub.alarm.model,
-            ATTR_SYSTEM_READY: hub.alarm.ready,
-            ATTR_SYSTEM_CONNECTED: hub.alarm.connected,
-            ATTR_SYSTEM_SESSION_TOKEN: hub.alarm.session_token,
-            ATTR_SYSTEM_LAST_UPDATE: hub.last_update,
-            # Kept for backward compatibility; UI should primarily use _attr_code_format
+            ATTR_SYSTEM_SERIAL_NUMBER: self._alarm.serial_number,
+            ATTR_SYSTEM_MODEL: self._alarm.model,
+            ATTR_SYSTEM_READY: self._alarm.ready,
+            ATTR_SYSTEM_CONNECTED: self._alarm.connected,
+            ATTR_SYSTEM_SESSION_TOKEN: self._alarm.session_token,
             ATTR_CODE_FORMAT: self.code_format,
             ATTR_CHANGED_BY: self.changed_by,
             ATTR_CHANGED_TIMESTAMP: self._changed_timestamp,
-            ATTR_ALARMS: hub.alarm.alarm,
+            ATTR_ALARMS: self._alarm.alarm,
         }
 
     @property
@@ -175,11 +203,11 @@ class VisonicAlarm(alarm.AlarmControlPanelEntity):
         """Update with the user and timestamp of the last state change."""
         self._changed_by = user
         self._changed_timestamp = timestamp
+        self.async_write_ha_state()
 
-    def update(self):
-        """Update alarm status."""
-        hub.update()
-        status = hub.alarm.state
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        status = self._alarm.state
 
         if status == 'AWAY':
             self._attr_alarm_state = AlarmControlPanelState.ARMED_AWAY
@@ -201,42 +229,38 @@ class VisonicAlarm(alarm.AlarmControlPanelEntity):
             except ValueError:
                 _LOGGER.error('Unable to parse alarm state: %s', status)
                 pn.create(
-                    self._hass,
-                    'Unknown alarm state: %s' % status,
+                    self.hass,
+                    f'Unknown alarm state: {status}',
                     title='Alarm State Error',
                 )
                 self._attr_alarm_state = None
 
-    @property
-    def supported_features(self) -> int:
-        """Return the list of supported features."""
-        return SUPPORT_VISONIC
+        super()._handle_coordinator_update()
 
     def _validate_code(self, code, action_title: str, fail_message: str) -> bool:
         """Validate a provided code against configured code when PIN is required."""
         if self._no_pin_required:
             return True
 
-        # If no code configured at all, treat as failure when PIN is required
         if self._code is None:
             pn.create(
-                self._hass,
+                self.hass,
                 'No user_code configured for this alarm integration.',
                 title=action_title,
             )
             return False
 
         if code is None:
-            pn.create(self._hass, fail_message, title=action_title)
+            pn.create(self.hass, fail_message, title=action_title)
             return False
 
         if str(code) != self._code:
-            pn.create(self._hass, 'You entered the wrong code.', title=action_title)
+            pn.create(self.hass, 'You entered the wrong code.', title=action_title)
             return False
 
         return True
 
-    def alarm_disarm(self, code=None):
+    async def async_alarm_disarm(self, code=None):
         """Send disarm command."""
         if not self._validate_code(
             code=code,
@@ -245,11 +269,11 @@ class VisonicAlarm(alarm.AlarmControlPanelEntity):
         ):
             return
 
-        hub.alarm.disarm()
-        sleep(1)
-        self.update()
+        await self.hass.async_add_executor_job(self._alarm.disarm)
+        await self.hass.async_add_executor_job(sleep, 1)
+        await self.coordinator.async_request_refresh()
 
-    def alarm_arm_home(self, code=None):
+    async def async_alarm_arm_home(self, code=None):
         """Send arm home command."""
         if not self._validate_code(
             code=code,
@@ -258,19 +282,19 @@ class VisonicAlarm(alarm.AlarmControlPanelEntity):
         ):
             return
 
-        if hub.alarm.ready:
-            hub.alarm.arm_home()
-            sleep(1)
-            self.update()
+        if self._alarm.ready:
+            await self.hass.async_add_executor_job(self._alarm.arm_home)
+            await self.hass.async_add_executor_job(sleep, 1)
+            await self.coordinator.async_request_refresh()
         else:
             pn.create(
-                self._hass,
+                self.hass,
                 'The alarm system is not in a ready state. '
                 'Maybe there are doors or windows open?',
                 title='Arm Failed',
             )
 
-    def alarm_arm_away(self, code=None):
+    async def async_alarm_arm_away(self, code=None):
         """Send arm away command."""
         if not self._validate_code(
             code=code,
@@ -279,13 +303,13 @@ class VisonicAlarm(alarm.AlarmControlPanelEntity):
         ):
             return
 
-        if hub.alarm.ready:
-            hub.alarm.arm_away()
-            sleep(1)
-            self.update()
+        if self._alarm.ready:
+            await self.hass.async_add_executor_job(self._alarm.arm_away)
+            await self.hass.async_add_executor_job(sleep, 1)
+            await self.coordinator.async_request_refresh()
         else:
             pn.create(
-                self._hass,
+                self.hass,
                 'The alarm system is not in a ready state. '
                 'Maybe there are doors or windows open?',
                 title='Unable to Arm',
