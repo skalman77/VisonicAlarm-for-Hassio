@@ -1,133 +1,98 @@
-"""
-Support for Visonic Alarm components.
-
-"""
+"""The Visonic Alarm integration."""
 import logging
-import threading
 from datetime import timedelta
-from datetime import datetime
 
-import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from homeassistant.const import (CONF_HOST, CONF_NAME)
-from homeassistant.helpers import discovery
-from homeassistant.helpers.entity import Entity
-from homeassistant.util import Throttle
-import homeassistant.helpers.config_validation as cv
-
-REQUIREMENTS = ['visonicalarm2==3.3.6', 'python-dateutil==2.7.3']
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_NO_PIN_REQUIRED = 'no_pin_required'
-CONF_USER_CODE = 'user_code'
-CONF_APP_ID = 'app_id'
-CONF_USER_EMAIL = 'user_email'
-CONF_USER_PASSWORD = 'user_password'
-CONF_PANEL_ID = 'panel_id'
-CONF_PARTITION = 'partition'
-CONF_EVENT_HOUR_OFFSET = 'event_hour_offset'
+PLATFORMS = [Platform.ALARM_CONTROL_PANEL, Platform.BINARY_SENSOR]
 
-STATE_ATTR_SYSTEM_NAME = 'system_name'
-STATE_ATTR_SYSTEM_SERIAL_NUMBER = 'serial_number'
-STATE_ATTR_SYSTEM_MODEL = 'model'
-STATE_ATTR_SYSTEM_READY = 'ready'
-STATE_ATTR_SYSTEM_ACTIVE = 'active'
-STATE_ATTR_SYSTEM_CONNECTED = 'connected'
-
-DEFAULT_NAME = 'Visonic Alarm'
-DEFAULT_PARTITION = 'ALL'
-
-DOMAIN = 'visonicalarm'
-
-HUB = None
-
-CONFIG_SCHEMA = vol.Schema({
-    DOMAIN: vol.Schema({
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_APP_ID): cv.string,
-        vol.Required(CONF_USER_CODE): cv.string,
-        vol.Required(CONF_USER_EMAIL): cv.string,
-        vol.Required(CONF_USER_PASSWORD): cv.string,
-        vol.Required(CONF_PANEL_ID): cv.string,
-        vol.Optional(CONF_PARTITION, default=DEFAULT_PARTITION): cv.string,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_NO_PIN_REQUIRED, default=False): cv.boolean,
-        vol.Optional(CONF_EVENT_HOUR_OFFSET, default=0): vol.All(vol.Coerce(int), vol.Range(min=-24, max=24)),
-    }),
-}, extra=vol.ALLOW_EXTRA)
+SCAN_INTERVAL = timedelta(seconds=10)
 
 
-def setup(hass, config):
-    """ Setup the Visonic Alarm component."""
-    from visonic import alarm as visonicalarm
-    global HUB
-    HUB = VisonicAlarmHub(config[DOMAIN], visonicalarm)
-    if not HUB.connect():
-        return False
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Visonic Alarm component."""
+    hass.data.setdefault(DOMAIN, {})
+    return True
 
-    HUB.update()
 
-    # Load the supported platforms
-    for component in ('sensor', 'alarm_control_panel'):
-        discovery.load_platform(hass, component, DOMAIN, {}, config)
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Visonic Alarm from a config entry."""
+    from visonic import alarm as visonic_alarm
+
+    # Skapa alarm-instans
+    alarm = visonic_alarm.Setup(
+        entry.data['host'],
+        entry.data['app_id'],
+        entry.data['user_email'],
+        entry.data['user_password'],
+        entry.data['panel_id'],
+        entry.data.get('partition', -1)
+    )
+
+    # Skapa coordinator för uppdateringar
+    coordinator = VisonicDataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f'{DOMAIN}_{entry.entry_id}',
+        update_interval=SCAN_INTERVAL,
+        alarm=alarm,
+    )
+
+    # Första uppdateringen
+    await coordinator.async_config_entry_first_refresh()
+
+    # Spara data
+    hass.data[DOMAIN][entry.entry_id] = {
+        'coordinator': coordinator,
+        'alarm': alarm,
+        'config': entry.data,
+        'options': entry.options,
+    }
+
+    # Ladda plattformar
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Lyssna på options-uppdateringar
+    entry.async_on_unload(entry.add_update_listener(update_listener))
 
     return True
 
 
-class VisonicAlarmHub(Entity):
-    """ A Visonic Alarm hub wrapper class. """
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
 
-    def __init__(self, domain_config, visonicalarm):
-        """ Initialize the Visonic Alarm hub. """
+    return unload_ok
 
-        self.config = domain_config
-        self._visonicalarm = visonicalarm
-        self._last_update = None
 
-        self._lock = threading.Lock()
+async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
-        self.alarm = visonicalarm.System(domain_config[CONF_HOST],
-                                         domain_config[CONF_APP_ID],
-                                         domain_config[CONF_USER_CODE],
-                                         domain_config[CONF_USER_EMAIL],
-                                         domain_config[CONF_USER_PASSWORD],
-                                         domain_config[CONF_PANEL_ID],
-                                         domain_config[CONF_PARTITION])
 
-    def connect(self):
-        """ Setup a connection to the Visonic API server. """
-        try:
-            self.alarm.connect()
-            return True
-        except Exception as ex:
-            _LOGGER.error('Connection failed: %s', ex)
-            return False
+class VisonicDataUpdateCoordinator(DataUpdateCoordinator):
+    """Class to manage fetching Visonic data."""
 
-    @property
-    def last_update(self):
-        """ Return the last update timestamp. """
-        return self._last_update
+    def __init__(self, hass, logger, name, update_interval, alarm):
+        """Initialize."""
+        super().__init__(
+            hass,
+            logger,
+            name=name,
+            update_interval=update_interval,
+        )
+        self.alarm = alarm
 
-    @Throttle(timedelta(seconds=10))
-    def update(self):
-        """ Update all alarm statuses. """
-        try:
-            if self.alarm.is_token_valid == False:
-                self.alarm.connect()
-            
-            self.alarm.update_status()
-            #self.alarm.update_alarms()
-            #self.alarm.update_troubles()
-            #self.alarm.update_alerts()
-            self.alarm.update_devices()
-
-            self._last_update = datetime.now()
-        except Exception as ex:
-            _LOGGER.error('Update failed: %s', ex)
-            raise
-
-    @property
-    def name(self):
-        """ Return the name of the hub."""
-        return "Visonic Alarm Hub"
+    async def _async_update_data(self):
+        """Fetch data from API."""
+        return await self.hass.async_add_executor_job(self.alarm.update)

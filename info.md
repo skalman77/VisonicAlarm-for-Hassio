@@ -1,43 +1,162 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-<br><a href="https://www.buymeacoffee.com/4nd3rs" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-black.png" width="150px" height="35px" alt="Buy Me A Coffee" style="height: 35px !important;width: 150px !important;" ></a>
+# Visonic Alarm Integration
 
-## Visonic/Bentel/Tyco Alarm Sensor
-This component interfaces with the API server hosted by your home alarm system company.
+Visonic/Bentel/Tyco Alarm System integration for Home Assistant with GUI configuration.
 
-It is dependant on the Python module: https://github.com/And3rsL/VisonicAlarm2 which will automatically be installed when running the sensor component. This library has much more functionality than this component utilises, so feel free to check it out of you are into Python 3 programming.
+## ✨ Features
 
-This is unsupported by Visonic - they don't publish their REST API. It is also unsupported by me. I accept no liability for your use of the component or library nor for any loss or damage resulting from security breaches at your property.
+- 🔐 Alarm control panel for arming/disarming the system
+- 🚪 Sensors for all door and window contacts
+- 🏠 Support for both Home and Away modes
+- 🔢 Optional PIN code for arming/disarming
+- ⚙️ GUI configuration (no YAML files needed)
 
-### Introduction
-This component will create one **alarm_control_panel** that let you show the current state of the alarm system and also to arm and disarm the system. It will also create one **sensor** for every door/window contact that let you see if the doors or windows are open or closed.
+## 📋 Requirements
 
-The Alarm Control Panel will be called **alarm_control_panel.visonic_alarm** and the contact sensors will be called **sensor.visonic_alarm_contact_ID** (where ID is the contact ID in the alarm system).
+- Visonic/Bentel/Tyco alarm system with PowerLink module
+- Visonic-GO or BW app with working account
+- Master User privileges in the system
 
-It polls the API server every 10 seconds, which is the same interval as the app does its updates. So there is up to a 10 second delay between updates.
+## 🚀 Installation
 
-### Requirements
-The component has only been tested with a Visonic PowerMaster 10 with a PowerLink 3 ethernet module, so it might not work with (but should) other Visonic alarm systems.
+### Step 1: Install via HACS
+1. Open HACS in Home Assistant
+2. Go to **Integrations**
+3. Click **⋮** (three dots) → **Custom repositories**
+4. Add: `https://github.com/skalman77/VisonicAlarm-for-Hassio`
+5. Category: **Integration**
+6. Click **Add**
+7. Search for **Visonic Alarm** and click **Download**
+8. Restart Home Assistant
 
-### Configuration
-Now to the configuration of Home Assistant.
+### Step 2: Configure the integration
+1. Go to **Settings** → **Devices & Services**
+2. Click **+ Add Integration**
+3. Search for **Visonic Alarm**
+4. Fill in the form:
 
-Open the configuration file (`configuration.yaml`) and use the following code:
+| Field | Description | Example |
+|------|-------------|---------|
+| **Host** | Your alarm server address | `company.tycomonitor.com` |
+| **Panel ID** | Panel ID from your app | `123456` |
+| **User Code** | Your PIN code for the alarm | `1234` |
+| **App ID** | UUID (generate at uuidgenerator.net) | `00000000-0000-0000-0000-000000000000` |
+| **Email** | Your Visonic account email | `example@email.com` |
+| **Password** | Your Visonic account password | `yourpassword` |
+| **Partition** | Alarm zone (-1 for default) | `-1` |
+| **No PIN Required** | Skip PIN when arming | `false` |
+| **Event Hour Offset** | Timezone adjustment | `0` |
+
+5. Click **Submit**
+
+## ⚙️ Settings
+
+After installation you can change certain settings:
+1. Go to **Devices & Services**
+2. Find **Visonic Alarm**
+3. Click **Configure**
+4. Modify **No PIN Required** or **Event Hour Offset**
+
+## 📱 Created Entities
+
+### Alarm Control Panel
+- `alarm_control_panel.visonic_alarm`
+  - States: `disarmed`, `armed_home`, `armed_away`, `arming`, `pending`, `triggered`
+
+### Binary Sensors (Contacts)
+- `binary_sensor.visonic_alarm_contact_1`
+- `binary_sensor.visonic_alarm_contact_2`
+- `binary_sensor.visonic_alarm_contact_X`
+  - States: `on` (open), `off` (closed)
+
+## 🎯 Usage
+
+### In Home Assistant UI
+1. Go to **Overview**
+2. Find your **Visonic Alarm** card
+3. Click to arm/disarm
+4. Enter PIN code if enabled
+
+### In Automations
 ```yaml
-visonicalarm:
-  host: YOURALARMCOMPANY.tycomonitor.com
-  panel_id: 123456
-  user_code: 1234
-  app_id: 00000000-0000-0000-0000-000000000000
-  user_email: 'example@email.com'
-  user_password: 'yourpassword'
-  partition: -1
-  no_pin_required: False
+automation:
+  - alias: "Arm when everyone leaves"
+    trigger:
+      - platform: state
+        entity_id: group.all_persons
+        to: 'not_home'
+    action:
+      - service: alarm_control_panel.alarm_arm_away
+        target:
+          entity_id: alarm_control_panel.visonic_alarm
+        data:
+          code: '1234'
 ```
 
-The **host**, **user_code**, **panel_id**, **user_email**, **user_password** are the same you are using when logging in to your system via the Visonic-GO/BW app,
-and **app_id** is just a uniqe id generated from this site: https://www.uuidgenerator.net/ so make sure you replace 00000000-0000-0000-0000-000000000000 with an ID that you generate with that site. There is only support for the -1 partition.
+### In Scripts
+```yaml
+script:
+  arm_alarm_home:
+    sequence:
+      - service: alarm_control_panel.alarm_arm_home
+        target:
+          entity_id: alarm_control_panel.visonic_alarm
+        data:
+          code: '1234'
+```
 
-Please be sure that the user is the MASTER USER and you alredy added your panel in your registered account
+## 🔧 Troubleshooting
 
-### Screenshots ###
-![Alarm Panel dialog](https://github.com/And3rsL/VisonicAlarm-for-Hassio/blob/master/HomeAssistantArmDialog2.png)
+### Integration not appearing
+- Check that you restarted Home Assistant after installation
+- Check logs: **Settings** → **System** → **Logs**
+
+### Cannot connect
+- Verify credentials are correct (test in Visonic app first)
+- Check that you have Master User privileges
+- Verify hostname is correct (same as in app)
+
+### Sensors not appearing
+- Check that your zones are enabled in the alarm system
+- Wait 10-30 seconds after configuration
+- Restart Home Assistant
+
+### PIN code not working
+- Verify `user_code` matches your Master User PIN
+- Double-check you entered the correct code in configuration
+
+## 📝 Migrating from YAML
+
+If you previously used YAML configuration:
+
+1. **Remove** this configuration from `configuration.yaml`:
+```yaml
+visonicalarm:
+  host: ...
+  panel_id: ...
+  # etc.
+```
+
+2. Restart Home Assistant
+
+3. Follow the installation instructions above to configure via GUI
+
+## 🆘 Support
+
+If you encounter problems:
+1. Check [GitHub Issues](https://github.com/skalman77/VisonicAlarm-for-Hassio/issues)
+2. Create a new issue if the problem isn't listed
+3. Include Home Assistant logs and your configuration (hide sensitive info)
+
+## 📜 License
+
+MIT License - See [LICENSE](LICENSE) for details
+
+## ☕ Support the Developer
+
+If you like this integration, consider supporting the original developer:
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/default-black.png)](https://www.buymeacoffee.com/4nd3rs)
+
+---
+
+**NOTE!** This integration is not officially supported by Visonic/Bentel/Tyco. Use at your own risk.

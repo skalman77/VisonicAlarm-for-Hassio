@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Konfigurera Visonic Alarm",
+        "description": "Ange dina Visonic Alarm-uppgifter",
+        "data": {
+          "host": "Värdnamn",
+          "panel_id": "Panel-ID",
+          "user_code": "Användarkod",
+          "app_id": "App-ID",
+          "user_email": "E-post",
+          "user_password": "Lösenord",
+          "partition": "Partition",
+          "no_pin_required": "Ingen PIN krävs",
+          "event_hour_offset": "Händelse tim-offset"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunde inte ansluta",
+      "invalid_auth": "Ogiltiga uppgifter",
+      "unknown": "Oväntat fel"
+    },
+    "abort": {
+      "already_configured": "Redan konfigurerad"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Inställningar",
+        "data": {
+          "no_pin_required": "Ingen PIN krävs",
+          "event_hour_offset": "Händelse tim-offset"
+        }
+      }
+    }
+  }
+}
