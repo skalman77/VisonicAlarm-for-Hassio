@@ -1,85 +1,85 @@
 # Visonic Alarm Integration
 
-Visonic/Bentel/Tyco Alarm System integration för Home Assistant med GUI-konfiguration.
+Visonic/Bentel/Tyco Alarm System integration for Home Assistant with GUI configuration.
 
-## ✨ Funktioner
+## ✨ Features
 
-- 🔐 Larmkontrollpanel för att larma/avlarma systemet
-- 🚪 Sensorer för alla dörr- och fönsterkontakter
-- 🏠 Stöd för både Home och Away-lägen
-- 🔢 Valfri PIN-kod för larmning/avlarmning
-- ⚙️ GUI-konfiguration (inga YAML-filer behövs)
+- 🔐 Alarm control panel for arming/disarming the system
+- 🚪 Sensors for all door and window contacts
+- 🏠 Support for both Home and Away modes
+- 🔢 Optional PIN code for arming/disarming
+- ⚙️ GUI configuration (no YAML files needed)
 
-## 📋 Krav
+## 📋 Requirements
 
-- Visonic/Bentel/Tyco larmsystem med PowerLink-modul
-- Visonic-GO eller BW-app med fungerande konto
-- Master User-behörighet i systemet
+- Visonic/Bentel/Tyco alarm system with PowerLink module
+- Visonic-GO or BW app with working account
+- Master User privileges in the system
 
 ## 🚀 Installation
 
-### Steg 1: Installera via HACS
-1. Öppna HACS i Home Assistant
-2. Gå till **Integrations**
-3. Klicka på **⋮** (tre prickar) → **Custom repositories**
-4. Lägg till: `https://github.com/skalman77/VisonicAlarm-for-Hassio`
-5. Kategori: **Integration**
-6. Klicka **Add**
-7. Sök efter **Visonic Alarm** och klicka **Download**
-8. Starta om Home Assistant
+### Step 1: Install via HACS
+1. Open HACS in Home Assistant
+2. Go to **Integrations**
+3. Click **⋮** (three dots) → **Custom repositories**
+4. Add: `https://github.com/skalman77/VisonicAlarm-for-Hassio`
+5. Category: **Integration**
+6. Click **Add**
+7. Search for **Visonic Alarm** and click **Download**
+8. Restart Home Assistant
 
-### Steg 2: Konfigurera integrationen
-1. Gå till **Inställningar** → **Enheter & tjänster**
-2. Klicka **+ Lägg till integration**
-3. Sök efter **Visonic Alarm**
-4. Fyll i formuläret:
+### Step 2: Configure the integration
+1. Go to **Settings** → **Devices & Services**
+2. Click **+ Add Integration**
+3. Search for **Visonic Alarm**
+4. Fill in the form:
 
-| Fält | Beskrivning | Exempel |
+| Field | Description | Example |
 |------|-------------|---------|
-| **Värdnamn** | Din alarm-servers adress | `company.tycomonitor.com` |
-| **Panel-ID** | Panel-ID från din app | `123456` |
-| **Användarkod** | Din PIN-kod för larmet | `1234` |
-| **App-ID** | UUID (generera på uuidgenerator.net) | `00000000-0000-0000-0000-000000000000` |
-| **E-post** | Din Visonic-kontots e-post | `exempel@email.com` |
-| **Lösenord** | Ditt Visonic-kontots lösenord | `dittlösenord` |
-| **Partition** | Larmzon (-1 för standard) | `-1` |
-| **Ingen PIN krävs** | Hoppa över PIN vid larmning | `false` |
-| **Händelse tim-offset** | Tidszonsjustering | `0` |
+| **Host** | Your alarm server address | `company.tycomonitor.com` |
+| **Panel ID** | Panel ID from your app | `123456` |
+| **User Code** | Your PIN code for the alarm | `1234` |
+| **App ID** | UUID (generate at uuidgenerator.net) | `00000000-0000-0000-0000-000000000000` |
+| **Email** | Your Visonic account email | `example@email.com` |
+| **Password** | Your Visonic account password | `yourpassword` |
+| **Partition** | Alarm zone (-1 for default) | `-1` |
+| **No PIN Required** | Skip PIN when arming | `false` |
+| **Event Hour Offset** | Timezone adjustment | `0` |
 
-5. Klicka **Skicka**
+5. Click **Submit**
 
-## ⚙️ Inställningar
+## ⚙️ Settings
 
-Efter installation kan du ändra vissa inställningar:
-1. Gå till **Enheter & tjänster**
-2. Hitta **Visonic Alarm**
-3. Klicka **Konfigurera**
-4. Ändra **Ingen PIN krävs** eller **Händelse tim-offset**
+After installation you can change certain settings:
+1. Go to **Devices & Services**
+2. Find **Visonic Alarm**
+3. Click **Configure**
+4. Modify **No PIN Required** or **Event Hour Offset**
 
-## 📱 Entiteter som skapas
+## 📱 Created Entities
 
 ### Alarm Control Panel
 - `alarm_control_panel.visonic_alarm`
   - States: `disarmed`, `armed_home`, `armed_away`, `arming`, `pending`, `triggered`
 
-### Binary Sensors (Kontakter)
+### Binary Sensors (Contacts)
 - `binary_sensor.visonic_alarm_contact_1`
 - `binary_sensor.visonic_alarm_contact_2`
 - `binary_sensor.visonic_alarm_contact_X`
-  - States: `on` (öppen), `off` (stängd)
+  - States: `on` (open), `off` (closed)
 
-## 🎯 Användning
+## 🎯 Usage
 
-### I Home Assistant-gränssnittet
-1. Gå till **Översikt**
-2. Hitta din **Visonic Alarm**-kort
-3. Klicka för att larma/avlarma
-4. Ange PIN-kod om aktiverat
+### In Home Assistant UI
+1. Go to **Overview**
+2. Find your **Visonic Alarm** card
+3. Click to arm/disarm
+4. Enter PIN code if enabled
 
-### I automationer
+### In Automations
 ```yaml
 automation:
-  - alias: "Larma när alla lämnar hemmet"
+  - alias: "Arm when everyone leaves"
     trigger:
       - platform: state
         entity_id: group.all_persons
@@ -92,7 +92,7 @@ automation:
           code: '1234'
 ```
 
-### I skript
+### In Scripts
 ```yaml
 script:
   arm_alarm_home:
@@ -104,31 +104,31 @@ script:
           code: '1234'
 ```
 
-## 🔧 Felsökning
+## 🔧 Troubleshooting
 
-### Integrationen visas inte
-- Kontrollera att du startat om Home Assistant efter installation
-- Kolla loggen: **Inställningar** → **System** → **Loggar**
+### Integration not appearing
+- Check that you restarted Home Assistant after installation
+- Check logs: **Settings** → **System** → **Logs**
 
-### Kan inte ansluta
-- Verifiera att dina uppgifter är korrekta (testa i Visonic-appen först)
-- Kontrollera att du har Master User-behörighet
-- Verifiera att värdnamnet är rätt (samma som i appen)
+### Cannot connect
+- Verify credentials are correct (test in Visonic app first)
+- Check that you have Master User privileges
+- Verify hostname is correct (same as in app)
 
-### Sensorer visas inte
-- Kontrollera att dina zoner är aktiverade i larmsystemet
-- Vänta 10-30 sekunder efter konfiguration
-- Starta om Home Assistant
+### Sensors not appearing
+- Check that your zones are enabled in the alarm system
+- Wait 10-30 seconds after configuration
+- Restart Home Assistant
 
-### PIN-kod fungerar inte
-- Kontrollera att `user_code` är samma som din Master User PIN
-- Dubbelkolla att du skrev rätt kod i konfigurationen
+### PIN code not working
+- Verify `user_code` matches your Master User PIN
+- Double-check you entered the correct code in configuration
 
-## 📝 Migrera från YAML
+## 📝 Migrating from YAML
 
-Om du tidigare använde YAML-konfiguration:
+If you previously used YAML configuration:
 
-1. **Ta bort** denna konfiguration från `configuration.yaml`:
+1. **Remove** this configuration from `configuration.yaml`:
 ```yaml
 visonicalarm:
   host: ...
@@ -136,27 +136,27 @@ visonicalarm:
   # etc.
 ```
 
-2. Starta om Home Assistant
+2. Restart Home Assistant
 
-3. Följ installationsinstruktionerna ovan för att konfigurera via GUI
+3. Follow the installation instructions above to configure via GUI
 
 ## 🆘 Support
 
-Om du stöter på problem:
-1. Kontrollera [GitHub Issues](https://github.com/skalman77/VisonicAlarm-for-Hassio/issues)
-2. Skapa en ny issue om problemet inte finns listat
-3. Inkludera Home Assistant-loggar och din konfiguration (dölj känslig info)
+If you encounter problems:
+1. Check [GitHub Issues](https://github.com/skalman77/VisonicAlarm-for-Hassio/issues)
+2. Create a new issue if the problem isn't listed
+3. Include Home Assistant logs and your configuration (hide sensitive info)
 
-## 📜 Licens
+## 📜 License
 
-MIT License - Se [LICENSE](LICENSE) för detaljer
+MIT License - See [LICENSE](LICENSE) for details
 
-## ☕ Stöd utvecklaren
+## ☕ Support the Developer
 
-Om du gillar denna integration, överväg att stödja den ursprungliga utvecklaren:
+If you like this integration, consider supporting the original developer:
 
 [![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/default-black.png)](https://www.buymeacoffee.com/4nd3rs)
 
 ---
 
-**OBS!** Denna integration är inte officiellt stödd av Visonic/Bentel/Tyco. Använd på egen risk.
+**NOTE!** This integration is not officially supported by Visonic/Bentel/Tyco. Use at your own risk.
