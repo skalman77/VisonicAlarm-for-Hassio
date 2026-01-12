@@ -2,7 +2,7 @@
   "domain": "visonicalarm",
   "name": "Visonic Alarm",
   "documentation": "https://github.com/skalman77/VisonicAlarm-for-Hassio",
-  "requirements": ["visonic>=3.0.0"],
+  "requirements": ["visonicalarm"],
   "codeowners": ["@skalman77"],
   "config_flow": true,
   "iot_class": "cloud_polling",
