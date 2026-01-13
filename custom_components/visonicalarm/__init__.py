@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.exceptions import ConfigEntryNotReady
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,14 +26,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Visonic Alarm from a config entry."""
     from visonic import alarm as visonic_alarm
 
-    # Skapa alarm-instans med bara hostname och app_id
-    alarm = visonic_alarm.Setup(
-        entry.data['host'],
-        entry.data['app_id']
-    )
-    
-    # Anslut med alla credentials
+    # Skapa alarm-instans i executor (eftersom den gör nätverksanrop)
     try:
+        alarm = await hass.async_add_executor_job(
+            visonic_alarm.Setup,
+            entry.data['host'],
+            entry.data['app_id']
+        )
+        
+        # Anslut med alla credentials
         await hass.async_add_executor_job(
             alarm.connect,
             entry.data['user_code'],
@@ -43,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     except Exception as err:
         _LOGGER.error('Failed to connect to Visonic Alarm: %s', err)
-        return False
+        raise ConfigEntryNotReady(f'Could not connect to Visonic Alarm: {err}') from err
 
     # Skapa coordinator för uppdateringar
     coordinator = VisonicDataUpdateCoordinator(
