@@ -1,11 +1,12 @@
 """The Visonic Alarm integration."""
 import logging
-from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.util import Throttle
+from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,6 +14,17 @@ DOMAIN = 'visonicalarm'
 PLATFORMS = [Platform.ALARM_CONTROL_PANEL, Platform.BINARY_SENSOR]
 
 SCAN_INTERVAL = timedelta(seconds=10)
+
+# Configuration keys
+CONF_HOST = 'host'
+CONF_PANEL_ID = 'panel_id'
+CONF_USER_CODE = 'user_code'
+CONF_APP_ID = 'app_id'
+CONF_USER_EMAIL = 'user_email'
+CONF_USER_PASSWORD = 'user_password'
+CONF_PARTITION = 'partition'
+CONF_NO_PIN_REQUIRED = 'no_pin_required'
+CONF_EVENT_HOUR_OFFSET = 'event_hour_offset'
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -25,35 +37,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Visonic Alarm from a config entry."""
     from visonic import alarm as visonic_alarm
 
-    # Skapa en klass-wrapper för att hantera alarm-instansen
-    class VisonicHub:
-        """Wrapper class for Visonic Alarm."""
+    # Create hub wrapper - samma struktur som YAML-versionen
+    class Hub:
+        """Hub wrapper for Visonic Alarm."""
         
-        def __init__(self, alarm_instance, config_data):
-            self.alarm = alarm_instance
-            self.config = config_data
+        def __init__(self):
+            self.alarm = None
+            self.config = entry.data
             self.last_update = None
-            
+
+        @Throttle(SCAN_INTERVAL)
         def update(self):
             """Update alarm data."""
-            self.alarm.update()
-            self.last_update = self.alarm.last_update if hasattr(self.alarm, 'last_update') else None
+            if self.alarm:
+                self.alarm.update()
+                self.last_update = self.alarm.last_update if hasattr(self.alarm, 'last_update') else None
 
-    # Skapa och anslut till alarm
+    # Create hub instance
+    hub = Hub()
+
+    # Setup alarm - DET HÄR ÄR RÄTT ENLIGT ORIGINAL-KODEN
     try:
-        # Skapa alarm-instans i executor
-        alarm_instance = await hass.async_add_executor_job(
-            visonic_alarm.Setup,
-            entry.data['host'],
-            entry.data['app_id'],
-            entry.data['user_email'],
-            entry.data['user_password'],
-            entry.data['panel_id'],
-            entry.data.get('partition', -1)
-        )
+        # Skapa alarm-instansen i executor
+        def setup_alarm():
+            return visonic_alarm.Setup(
+                entry.data[CONF_HOST],
+                entry.data[CONF_APP_ID],
+                entry.data[CONF_USER_EMAIL],
+                entry.data[CONF_USER_PASSWORD],
+                entry.data[CONF_PANEL_ID],
+                entry.data.get(CONF_PARTITION, -1)
+            )
         
-        # Skapa hub-wrapper
-        hub = VisonicHub(alarm_instance, entry.data)
+        hub.alarm = await hass.async_add_executor_job(setup_alarm)
         
         # Initial update
         await hass.async_add_executor_job(hub.update)
@@ -62,13 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error('Failed to setup Visonic Alarm: %s', err)
         raise ConfigEntryNotReady(f'Could not connect to Visonic Alarm: {err}') from err
 
-    # Spara data
-    hass.data[DOMAIN][entry.entry_id] = {
-        'hub': hub,
-        'alarm': alarm_instance,
-        'config': entry.data,
-        'options': entry.options,
-    }
+    # Spara hub
+    hass.data[DOMAIN][entry.entry_id] = hub
 
     # Ladda plattformar
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
