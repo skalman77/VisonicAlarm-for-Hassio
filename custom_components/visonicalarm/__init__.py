@@ -7,10 +7,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN
-
 _LOGGER = logging.getLogger(__name__)
 
+DOMAIN = 'visonicalarm'
 PLATFORMS = [Platform.ALARM_CONTROL_PANEL, Platform.BINARY_SENSOR]
 
 SCAN_INTERVAL = timedelta(seconds=10)
@@ -26,15 +25,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Visonic Alarm from a config entry."""
     from visonic import alarm as visonic_alarm
 
-    # Skapa alarm-instans
+    # Skapa alarm-instans med bara hostname och app_id
     alarm = visonic_alarm.Setup(
         entry.data['host'],
-        entry.data['app_id'],
-        entry.data['user_email'],
-        entry.data['user_password'],
-        entry.data['panel_id'],
-        entry.data.get('partition', -1)
+        entry.data['app_id']
     )
+    
+    # Anslut med alla credentials
+    try:
+        await hass.async_add_executor_job(
+            alarm.connect,
+            entry.data['user_code'],
+            entry.data['user_email'],
+            entry.data['user_password'],
+            entry.data['panel_id'],
+            entry.data.get('partition', -1)
+        )
+    except Exception as err:
+        _LOGGER.error('Failed to connect to Visonic Alarm: %s', err)
+        return False
 
     # Skapa coordinator för uppdateringar
     coordinator = VisonicDataUpdateCoordinator(
