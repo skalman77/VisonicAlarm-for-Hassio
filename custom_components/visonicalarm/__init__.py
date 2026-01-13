@@ -5,7 +5,6 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.exceptions import ConfigEntryNotReady
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,42 +25,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Visonic Alarm from a config entry."""
     from visonic import alarm as visonic_alarm
 
-    # Skapa alarm-instans med alla parametrar
+    # Skapa en klass-wrapper för att hantera alarm-instansen
+    class VisonicHub:
+        """Wrapper class for Visonic Alarm."""
+        
+        def __init__(self, alarm_instance, config_data):
+            self.alarm = alarm_instance
+            self.config = config_data
+            self.last_update = None
+            
+        def update(self):
+            """Update alarm data."""
+            self.alarm.update()
+            self.last_update = self.alarm.last_update if hasattr(self.alarm, 'last_update') else None
+
+    # Skapa och anslut till alarm
     try:
-        alarm = await hass.async_add_executor_job(
-            visonic_alarm.System,
+        # Skapa alarm-instans i executor
+        alarm_instance = await hass.async_add_executor_job(
+            visonic_alarm.Setup,
             entry.data['host'],
             entry.data['app_id'],
-            entry.data['user_code'],
             entry.data['user_email'],
             entry.data['user_password'],
             entry.data['panel_id'],
             entry.data.get('partition', -1)
         )
         
-        # Anslut till systemet
-        await hass.async_add_executor_job(alarm.connect)
+        # Skapa hub-wrapper
+        hub = VisonicHub(alarm_instance, entry.data)
+        
+        # Initial update
+        await hass.async_add_executor_job(hub.update)
         
     except Exception as err:
-        _LOGGER.error('Failed to connect to Visonic Alarm: %s', err)
+        _LOGGER.error('Failed to setup Visonic Alarm: %s', err)
         raise ConfigEntryNotReady(f'Could not connect to Visonic Alarm: {err}') from err
-
-    # Skapa coordinator för uppdateringar
-    coordinator = VisonicDataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name=f'{DOMAIN}_{entry.entry_id}',
-        update_interval=SCAN_INTERVAL,
-        alarm=alarm,
-    )
-
-    # Första uppdateringen
-    await coordinator.async_config_entry_first_refresh()
 
     # Spara data
     hass.data[DOMAIN][entry.entry_id] = {
-        'coordinator': coordinator,
-        'alarm': alarm,
+        'hub': hub,
+        'alarm': alarm_instance,
         'config': entry.data,
         'options': entry.options,
     }
@@ -88,21 +92,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     await hass.config_entries.async_reload(entry.entry_id)
-
-
-class VisonicDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching Visonic data."""
-
-    def __init__(self, hass, logger, name, update_interval, alarm):
-        """Initialize."""
-        super().__init__(
-            hass,
-            logger,
-            name=name,
-            update_interval=update_interval,
-        )
-        self.alarm = alarm
-
-    async def _async_update_data(self):
-        """Fetch data from API."""
-        return await self.hass.async_add_executor_job(self.alarm.update)
