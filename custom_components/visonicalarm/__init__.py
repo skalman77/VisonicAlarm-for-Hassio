@@ -26,23 +26,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Visonic Alarm from a config entry."""
     from visonic import alarm as visonic_alarm
 
-    # Skapa alarm-instans i executor (eftersom den gör nätverksanrop)
+    # Skapa alarm-instans med alla parametrar
     try:
         alarm = await hass.async_add_executor_job(
-            visonic_alarm.Setup,
+            visonic_alarm.System,
             entry.data['host'],
-            entry.data['app_id']
-        )
-        
-        # Anslut med alla credentials
-        await hass.async_add_executor_job(
-            alarm.connect,
+            entry.data['app_id'],
             entry.data['user_code'],
             entry.data['user_email'],
             entry.data['user_password'],
             entry.data['panel_id'],
             entry.data.get('partition', -1)
         )
+        
+        # Anslut till systemet
+        await hass.async_add_executor_job(alarm.connect)
+        
     except Exception as err:
         _LOGGER.error('Failed to connect to Visonic Alarm: %s', err)
         raise ConfigEntryNotReady(f'Could not connect to Visonic Alarm: {err}') from err
