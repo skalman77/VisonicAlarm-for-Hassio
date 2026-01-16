@@ -3,7 +3,6 @@ import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
     DOMAIN,
@@ -21,6 +20,19 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _normalize_host(host: str) -> str:
+    host = host.strip()
+    host = host.replace("https://", "").replace("http://", "").rstrip("/")
+    return host
+
+
+def _digits_only(value: str) -> str:
+    value = value.strip()
+    if not value.isdigit():
+        raise vol.Invalid("must be digits only")
+    return value
+
+
 class VisonicAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Visonic Alarm."""
 
@@ -32,31 +44,42 @@ class VisonicAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
+                # Normalize values to match how YAML commonly behaved
+                user_input[CONF_HOST] = _normalize_host(user_input[CONF_HOST])
+                user_input[CONF_PANEL_ID] = _digits_only(user_input[CONF_PANEL_ID])
+                user_input[CONF_USER_CODE] = _digits_only(user_input[CONF_USER_CODE])
+
                 await self.async_set_unique_id(str(user_input[CONF_PANEL_ID]))
                 self._abort_if_unique_id_configured()
-                
+
                 return self.async_create_entry(
-                    title=f'Visonic Alarm {user_input[CONF_PANEL_ID]}',
+                    title=f"Visonic Alarm {user_input[CONF_PANEL_ID]}",
                     data=user_input,
                 )
+            except vol.Invalid:
+                # Specific field errors: show a general error for now
+                errors["base"] = "invalid_input"
             except Exception as err:
-                _LOGGER.error('Failed to connect to Visonic Alarm: %s', err)
-                errors['base'] = 'cannot_connect'
+                _LOGGER.error("Failed to create Visonic Alarm entry: %s", err)
+                errors["base"] = "cannot_connect"
 
-        data_schema = vol.Schema({
-            vol.Required(CONF_HOST): str,
-            vol.Required(CONF_PANEL_ID): cv.positive_int,
-            vol.Required(CONF_USER_CODE): cv.positive_int,
-            vol.Required(CONF_APP_ID): str,
-            vol.Required(CONF_USER_EMAIL): str,
-            vol.Required(CONF_USER_PASSWORD): str,
-            vol.Optional(CONF_PARTITION, default=-1): int,
-            vol.Optional(CONF_NO_PIN_REQUIRED, default=False): bool,
-            vol.Optional(CONF_EVENT_HOUR_OFFSET, default=0): int,
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST): str,
+                # Store these as strings (API can be picky about types)
+                vol.Required(CONF_PANEL_ID): str,
+                vol.Required(CONF_USER_CODE): str,
+                vol.Required(CONF_APP_ID): str,
+                vol.Required(CONF_USER_EMAIL): str,
+                vol.Required(CONF_USER_PASSWORD): str,
+                vol.Optional(CONF_PARTITION, default="-1"): str,
+                vol.Optional(CONF_NO_PIN_REQUIRED, default=False): bool,
+                vol.Optional(CONF_EVENT_HOUR_OFFSET, default=0): int,
+            }
+        )
 
         return self.async_show_form(
-            step_id='user',
+            step_id="user",
             data_schema=data_schema,
             errors=errors,
         )
@@ -78,26 +101,28 @@ class VisonicAlarmOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(title='', data=user_input)
+            return self.async_create_entry(title="", data=user_input)
 
-        data_schema = vol.Schema({
-            vol.Optional(
-                CONF_NO_PIN_REQUIRED,
-                default=self.config_entry.options.get(
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
                     CONF_NO_PIN_REQUIRED,
-                    self.config_entry.data.get(CONF_NO_PIN_REQUIRED, False)
-                ),
-            ): bool,
-            vol.Optional(
-                CONF_EVENT_HOUR_OFFSET,
-                default=self.config_entry.options.get(
+                    default=self.config_entry.options.get(
+                        CONF_NO_PIN_REQUIRED,
+                        self.config_entry.data.get(CONF_NO_PIN_REQUIRED, False),
+                    ),
+                ): bool,
+                vol.Optional(
                     CONF_EVENT_HOUR_OFFSET,
-                    self.config_entry.data.get(CONF_EVENT_HOUR_OFFSET, 0)
-                ),
-            ): int,
-        })
+                    default=self.config_entry.options.get(
+                        CONF_EVENT_HOUR_OFFSET,
+                        self.config_entry.data.get(CONF_EVENT_HOUR_OFFSET, 0),
+                    ),
+                ): int,
+            }
+        )
 
         return self.async_show_form(
-            step_id='init',
+            step_id="init",
             data_schema=data_schema,
         )
