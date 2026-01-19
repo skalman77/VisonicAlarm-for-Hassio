@@ -11,6 +11,8 @@ Visonic/Bentel/Tyco Alarm System integration for Home Assistant with GUI configu
 
 This integration allows you to control your Visonic alarm system directly from Home Assistant. It connects to the API server used by the Visonic-GO and BW apps.
 
+⚠️ Note: This integration is maintained using AI-generated code and provided on a best-effort basis.
+
 ### Features
 
 - 🔐 **Alarm Control Panel** - Arm and disarm your system
