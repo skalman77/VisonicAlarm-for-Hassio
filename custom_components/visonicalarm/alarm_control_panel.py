@@ -10,11 +10,12 @@ from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelState,
     AlarmControlPanelEntityFeature,
 )
+import homeassistant.components.persistent_notification as pn
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_USER_CODE, CONF_NO_PIN_REQUIRED
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +63,6 @@ class VisonicAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
     _attr_has_entity_name = True
     _attr_name = "Alarm"
 
-    # OBS: Ingen DISARM-flagga här (finns inte i alla HA-versioner).
     _attr_supported_features = (
         AlarmControlPanelEntityFeature.ARM_HOME
         | AlarmControlPanelEntityFeature.ARM_AWAY
@@ -74,6 +74,33 @@ class VisonicAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
         self._alarm = alarm
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_alarm_panel"
+        
+        # Läs konfiguration och options
+        self._user_code = str(entry.data.get(CONF_USER_CODE, ""))
+        
+        # Kolla options först, sedan data
+        self._no_pin_required = entry.options.get(
+            CONF_NO_PIN_REQUIRED,
+            entry.data.get(CONF_NO_PIN_REQUIRED, False)
+        )
+        
+        # Sätt code format baserat på no_pin_required
+        self._attr_code_format = None if self._no_pin_required else "number"
+
+    @property
+    def code_format(self):
+        """Return the code format."""
+        return self._attr_code_format
+
+    @property
+    def code_arm_required(self) -> bool:
+        """Return if code is required for arming."""
+        return not self._no_pin_required
+
+    @property
+    def code_disarm_required(self) -> bool:
+        """Return if code is required for disarming."""
+        return not self._no_pin_required
 
     @property
     def alarm_state(self) -> AlarmControlPanelState:
@@ -88,8 +115,47 @@ class VisonicAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
 
         return _map_state(raw_state)
 
-    async def _call_alarm(self, method_name: str) -> None:
+    def _validate_code(self, code: str | None, action: str) -> bool:
+        """Validate the provided code."""
+        # Om PIN inte krävs, godkänn alltid
+        if self._no_pin_required:
+            return True
+        
+        # Om PIN krävs men ingen kod angavs
+        if code is None:
+            pn.create(
+                self.hass,
+                f"A code is required to {action}, but no code was provided.",
+                title=f"{action.capitalize()} Failed",
+            )
+            return False
+        
+        # Om ingen user_code är konfigurerad
+        if not self._user_code:
+            pn.create(
+                self.hass,
+                "No user_code configured for this alarm integration.",
+                title=f"{action.capitalize()} Failed",
+            )
+            return False
+        
+        # Validera koden
+        if str(code) != self._user_code:
+            pn.create(
+                self.hass,
+                "You entered the wrong code.",
+                title=f"{action.capitalize()} Failed",
+            )
+            return False
+        
+        return True
+
+    async def _call_alarm(self, method_name: str, code: str | None, action: str) -> None:
         """Call a blocking alarm method safely via executor and refresh."""
+        # Validera PIN-kod först
+        if not self._validate_code(code, action):
+            return
+        
         method = getattr(self._alarm, method_name, None)
         if not callable(method):
             raise ValueError(f"Alarm method not supported by library: {method_name}")
@@ -99,20 +165,28 @@ class VisonicAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         """Send disarm command."""
-        await self._call_alarm("disarm")
+        await self._call_alarm("disarm", code, "disarm")
 
     async def async_alarm_arm_home(self, code: str | None = None) -> None:
         """Send arm home command."""
-        await self._call_alarm("arm_home")
+        await self._call_alarm("arm_home", code, "arm")
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         """Send arm away command."""
-        await self._call_alarm("arm_away")
+        await self._call_alarm("arm_away", code, "arm")
 
     async def async_alarm_arm_night(self, code: str | None = None) -> None:
         """Send arm night command (fallback to home if not supported)."""
+        # Validera PIN-kod först
+        if not self._validate_code(code, "arm"):
+            return
+        
         if callable(getattr(self._alarm, "arm_night", None)):
-            await self._call_alarm("arm_night")
+            method = getattr(self._alarm, "arm_night")
+            await self.hass.async_add_executor_job(method)
         else:
             _LOGGER.warning("arm_night not supported; falling back to arm_home")
-            await self._call_alarm("arm_home")
+            method = getattr(self._alarm, "arm_home")
+            await self.hass.async_add_executor_job(method)
+        
+        await self.coordinator.async_request_refresh()
